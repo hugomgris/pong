@@ -1,0 +1,42 @@
+FROM nginx:stable-alpine
+
+# Create custom nginx configuration
+COPY <<EOF /etc/nginx/nginx.conf
+events {
+    worker_connections 1024;
+}
+
+http {
+    upstream backend {
+        server backend:3100;
+    }
+    
+    upstream frontend {
+        server frontend:5173;
+    }
+    
+    server {
+        listen 80;
+        
+        location /api/ {
+            proxy_pass http://backend;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+        }
+        
+        location / {
+            proxy_pass http://frontend;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+        }
+    }
+}
+EOF
+
+# Remove entire conf.d directory to prevent default configs
+RUN rm -rf /etc/nginx/conf.d
+
+EXPOSE 80
+
+# Start nginx directly without entrypoint scripts
+CMD ["nginx", "-g", "daemon off;"]

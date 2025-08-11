@@ -1,0 +1,88 @@
+# docker-compose.tunnel.yml - Unified configuration optimized for tunnel access
+
+services:
+  frontend:
+    build: 
+      context: ./frontend
+      args:
+        - NODE_ENV=development
+    environment:
+      - NODE_ENV=development
+    container_name: frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    restart: on-failure
+    networks:
+      - transcendence
+
+  backend:
+    environment:
+      - NODE_ENV=development
+      - SESSION_SECRET=${SESSION_SECRET}
+    volumes:
+      - ./backend:/usr/src/app:consistent
+      - userbase:/usr/src/app/db
+      - /usr/src/app/node_modules
+      - ./frontend/static/avatars:/usr/src/app/public/avatars
+    env_file:
+      - .env
+    networks:
+      - transcendence
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.dev
+    container_name: nginx
+    ports:
+      - "8080:80"  # Port 8080 for tunnel compatibility
+    depends_on:
+      - frontend
+      - backend
+    volumes:
+      - public:/usr/share/nginx/html:ro
+      - certs:/etc/letsencrypt
+    networks:
+      - transcendence
+
+  blockchain:
+    environment:
+      - NODE_ENV=development
+      - AVALANCHE_RPC_URL=https://api.avax-test.network/ext/bc/C/rpc
+      - PRIVATE_KEY=${BLOCKCHAIN_PRIVATE_KEY}
+      - BLOCKCHAIN_PRIVATE_KEY=${BLOCKCHAIN_PRIVATE_KEY}
+    networks:
+      - transcendence
+
+  redis:
+    environment:
+      - NODE_ENV=development
+    networks:
+      - transcendence
+
+  # Keep monitoring tools accessible but not exposed externally
+  adminer:
+    ports:
+      - "127.0.0.1:1090:1090"
+    networks:
+      - transcendence
+
+  prometheus:
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - transcendence
+
+  grafana:
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+    networks:
+      - transcendence
+
+networks:
+  transcendence:

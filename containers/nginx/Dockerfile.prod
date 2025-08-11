@@ -1,0 +1,138 @@
+FROM nginx:stable-alpine
+
+# Create production nginx configuration that works with tunnels
+COPY <<EOF /etc/nginx/nginx.conf
+events {
+    worker_connections 1024;
+}
+
+http {
+    limit_req_zone \$binary_remote_addr zone=api_limit:10m rate=10r/s;
+    client_max_body_size 4M;
+
+    upstream backend {
+        server backend:3100;
+    }
+    
+    upstream frontend {
+        server frontend:5173;
+    }
+    
+    server {
+        listen 80;
+        server_name localhost;
+        
+        # Security headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Permissions-Policy "geolocation=(),midi=(),sync-xhr=(),microphone=(),camera=(),magnetometer=(),gyroscope=(),fullscreen=(self),payment=()" always;
+
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        
+        # Admin tools (restricted to local network)
+        location /adminer/ {
+            allow 192.168.0.0/16;
+            allow 172.16.0.0/12;
+            allow 10.0.0.0/8;
+            deny all;
+            proxy_pass http://adminer:1090/;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
+
+        location /prometheus/ {
+            allow 192.168.0.0/16;
+            allow 172.16.0.0/12;
+            allow 10.0.0.0/8;
+            deny all;
+            proxy_pass http://prometheus:9090/;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
+
+        location /grafana/ {
+            allow 192.168.0.0/16;
+            allow 172.16.0.0/12;
+            allow 10.0.0.0/8;
+            deny all;
+            proxy_pass http://grafana:3001/;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
+
+        # API endpoints with rate limiting
+        location /api/ {
+            limit_req zone=api_limit burst=20 nodelay;
+            proxy_pass http://backend/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_cache_bypass \$http_upgrade;
+        }
+
+        # WebSocket support
+        location /ws {
+            proxy_pass http://backend/ws;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_set_header X-Forwarded-Host \$host;
+            
+            # WebSocket specific settings
+            proxy_cache_bypass \$http_upgrade;
+            proxy_read_timeout 86400;
+            proxy_send_timeout 86400;
+        }
+
+        # Security: deny access to hidden files
+        location ~ ^/\.[^/]+ {
+            deny all;
+            return 403;
+        }
+
+        # Security: deny access to sensitive files
+        location ~* (\.env|\.git|\.htaccess|config\.env) {
+            deny all;
+            return 403;
+        }
+
+        # Frontend catch-all (must be last)
+        location / {
+            proxy_pass http://frontend/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_cache_bypass \$http_upgrade;
+        }
+    }
+}
+EOF
+
+# Remove entire conf.d directory to prevent default configs
+RUN rm -rf /etc/nginx/conf.d
+
+EXPOSE 80
+
+# Start nginx directly without entrypoint scripts
+CMD ["nginx", "-g", "daemon off;"]
