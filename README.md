@@ -1,7 +1,7 @@
 # <h1 align="center">PONG - The Echo From a Distant Past</h1>
 
 <p align="center">
-   <b>A modern, extensible Pong game engine built with PixiJS and TypeScript, featuring advanced physics, real-time multiplayer, and a comprehensive Entity-Component-System architecture.</b><br>
+   <b>A modern, extensible Pong game engine built with PixiJS and TypeScript, featuring advanced physics, extended mechanics, real-time multiplayer, and a comprehensive Entity-Component-System architecture.</b><br>
 </p>
 
 ---
